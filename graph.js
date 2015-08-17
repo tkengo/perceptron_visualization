@@ -1,47 +1,31 @@
-var camera ,controls ,scene ,renderer;
 var SIZE = 1;
+var ANIM = 30;
+var camera ,controls ,scene ,renderer;
+var positivePoints, negativePoints, newPoint;
+var positiveMaterial, negativeMaterial, redMaterial;
+var weightVector;
+var rotationVector;
+var separationPlane;
+
+var data = generateData();
+var perceptron = new Perceptron(3);
+perceptron.addTrainingData(data.positive,  1);
+perceptron.addTrainingData(data.negative, -1);
 
 window.onload = function() {
   initializeObjects();
+  document.addEventListener('keydown', processNextStep);
+
   var axes = buildAxes();
 
-  var data = generateData();
+  var plane       = new THREE.PlaneGeometry(2, 2, 1, 1);
+  var material    = new THREE.MeshBasicMaterial({ color: '#da6272', opacity: 0.8, transparent: true, side: THREE.DoubleSide });
+  separationPlane = new THREE.Mesh(plane, material);
+  separationPlane.visible = false;
+  separationPlane.userData = { current: -1 };
+  separationPlane.position.set(0.5, 0.5, 0.5);
 
-  var trueGeos = new THREE.Geometry();
-  for (var i = 0; i < data[0].length; i++) {
-    var data1 = data[0][i];
-    var v = new THREE.Vector3(data1[0], data1[1], data1[2]);
-    // trueGeos.vertices.push(v);
-  }
-  var falseGeos = new THREE.Geometry();
-  for (var i = 0; i < data[1].length; i++) {
-    var data2 = data[1][i];
-    var v = new THREE.Vector3(data2[0], data2[1], data2[2]);
-    // falseGeos.vertices.push(v);
-  }
-  var texture = new THREE.Texture(createCircleCanvas('#e38692', '#d04255'));
-  texture.needsUpdate = true;
-  var truePoint = new THREE.PointCloudMaterial({
-    size: 0.5,
-    map: texture,
-    alphaTest: 0.5,
-    transparent: true
-  });
-  var texture = new THREE.Texture(createCircleCanvas('#6a8cc7', '#3261ab'));
-  texture.needsUpdate = true;
-  var falsePoint = new THREE.PointCloudMaterial({
-    size: 0.5,
-    map: texture,
-    alphaTest: 0.5,
-    transparent: true
-  });
-
-  var trueCloud = new THREE.PointCloud(trueGeos, truePoint);
-  var falseCloud = new THREE.PointCloud(falseGeos, falsePoint);
-
-  scene.add(axes);
-  scene.add(trueCloud);
-  scene.add(falseCloud);
+  scene.add(axes, positivePoints, negativePoints, separationPlane);
 
   (function() {
     requestAnimationFrame(arguments.callee);
@@ -49,6 +33,62 @@ window.onload = function() {
     renderer.render(scene, camera);
   })();
 };
+
+function arrow(v, color) {
+  var origin = new THREE.Vector3(0, 0, 0);
+  var length = v.length();
+  return new THREE.ArrowHelper(v.clone().normalize(), origin, length, color);
+}
+
+function processNextStep(e) {
+  switch (e.keyCode) {
+    case 32: { // スペースキー
+      var positives   = new THREE.Geometry();
+      var negatives   = new THREE.Geometry();
+      var newGeometry = new THREE.Geometry();
+
+      var learnedData = perceptron.stepLearn();
+      for (var i = 0; i < learnedData.length - 1; i++) {
+        var v = learnedData[i];
+        var x = v.data;
+        if (v.label == 1) {
+          positives.vertices.push(new THREE.Vector3(x[0], x[1], x[2]));
+        } else {
+          negatives.vertices.push(new THREE.Vector3(x[0], x[1], x[2]));
+        }
+      }
+      var x = learnedData[learnedData.length - 1].data;
+      newGeometry.vertices.push(new THREE.Vector3(x[0], x[1], x[2]));
+
+      scene.remove(positivePoints, negativePoints, newPoint, weightVector);
+      positivePoints.visible = false;
+      negativePoints.visible = false;
+
+      positivePoints = new THREE.PointCloud(positives, positiveMaterial);
+      negativePoints = new THREE.PointCloud(negatives, negativeMaterial);
+      newPoint       = new THREE.PointCloud(newGeometry, redMaterial);
+
+      var w      = perceptron.getWeight();
+      var wv     = new THREE.Vector3(w[0], w[1], w[2]);
+      var normal = separationPlane.geometry.faces[0].normal;
+      var origin = new THREE.Vector3(0, 0, 0);
+      var length = wv.length();
+      var rotationAxis = new THREE.Vector3();
+      rotationAxis.crossVectors(separationPlane.geometry.faces[0].normal, wv).normalize();
+
+      var angle = normal.dot(wv) / (normal.length() * wv.length());
+      var q = new THREE.Quaternion();
+      q.setFromAxisAngle(rotationAxis, Math.acos(angle));
+      separationPlane.rotation.setFromQuaternion(q);
+      separationPlane.visible = true;
+
+      weightVector = arrow(wv, '#ff00ff');
+
+      scene.add(positivePoints, negativePoints, newPoint, weightVector);
+      break;
+    }
+  }
+}
 
 function generateData() {
   // true-data
@@ -77,7 +117,10 @@ function generateData() {
     ]);
   }
 
-  return [ data1, data2 ];
+  return {
+    positive: data1,
+    negative: data2
+  };
 }
 
 function initializeObjects() {
@@ -101,6 +144,41 @@ function initializeObjects() {
   scene.scale.x = 5;
   scene.scale.y = 5;
   scene.scale.z = 5;
+
+  var materialOptions = {
+    size: 0.5,
+    alphaTest: 0.5,
+    transparent: true
+  };
+
+  var positives        = new THREE.Geometry();
+  var negatives        = new THREE.Geometry();
+  var texture1         = new THREE.Texture(createCircleCanvas('#86e392', '#42d055'));
+  var texture2         = new THREE.Texture(createCircleCanvas('#6a8cc7', '#3261ab'));
+  var texture3         = new THREE.Texture(createCircleCanvas('#e38692', '#d04255'));
+      positiveMaterial = new THREE.PointCloudMaterial(materialOptions);
+      negativeMaterial = new THREE.PointCloudMaterial(materialOptions);
+      redMaterial      = new THREE.PointCloudMaterial(materialOptions);
+      positivePoints   = new THREE.PointCloud(positives, positiveMaterial);
+      negativePoints   = new THREE.PointCloud(negatives, negativeMaterial);
+
+  for (var i = 0; i < data.positive.length; i++) {
+    var data1 = data.positive[i];
+    var vdata = new THREE.Vector3(data1[0], data1[1], data1[2]);
+    positives.vertices.push(vdata);
+  }
+  for (var i = 0; i < data.negative.length; i++) {
+    var data2 = data.negative[i];
+    var vdata = new THREE.Vector3(data2[0], data2[1], data2[2]);
+    negatives.vertices.push(vdata);
+  }
+
+  positiveMaterial.map = texture1;
+  negativeMaterial.map = texture2;
+  redMaterial.map      = texture3;
+  texture1.needsUpdate = true;
+  texture2.needsUpdate = true;
+  texture3.needsUpdate = true;
 }
 
 function buildAxes() {
