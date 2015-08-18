@@ -5,7 +5,7 @@ var positivePoints, negativePoints, newPoint;
 var positiveMaterial, negativeMaterial, redMaterial;
 var weightVector;
 var rotationVector;
-var separationPlane;
+var separationPlane, oldSeparationPlane;
 
 var data = generateData();
 var perceptron = new Perceptron(3);
@@ -18,14 +18,17 @@ window.onload = function() {
 
   var axes = buildAxes();
 
-  var plane       = new THREE.PlaneGeometry(2, 2, 1, 1);
-  var material    = new THREE.MeshBasicMaterial({ color: '#da6272', opacity: 0.8, transparent: true, side: THREE.DoubleSide });
-  separationPlane = new THREE.Mesh(plane, material);
+  var plane          = new THREE.PlaneGeometry(2, 2, 1, 1);
+  var material1      = new THREE.MeshBasicMaterial({ color: '#da6272', opacity: 0.8, transparent: true, side: THREE.DoubleSide });
+  var material2      = new THREE.MeshBasicMaterial({ color: '#daa672', opacity: 0.3, transparent: true, side: THREE.DoubleSide });
+  separationPlane    = new THREE.Mesh(plane, material1);
+  oldSeparationPlane = new THREE.Mesh(plane, material2);
   separationPlane.visible = false;
-  separationPlane.userData = { current: -1 };
   separationPlane.position.set(0.5, 0.5, 0.5);
+  oldSeparationPlane.visible = false;
+  oldSeparationPlane.position.set(0.5, 0.5, 0.5);
 
-  scene.add(axes, positivePoints, negativePoints, separationPlane);
+  scene.add(axes, positivePoints, negativePoints, separationPlane, oldSeparationPlane);
 
   (function() {
     requestAnimationFrame(arguments.callee);
@@ -40,6 +43,7 @@ function arrow(v, color) {
   return new THREE.ArrowHelper(v.clone().normalize(), origin, length, color);
 }
 
+var oldW = [ 0, 0, 0 ];
 function processNextStep(e) {
   switch (e.keyCode) {
     case 32: { // スペースキー
@@ -76,15 +80,27 @@ function processNextStep(e) {
       var rotationAxis = new THREE.Vector3();
       rotationAxis.crossVectors(separationPlane.geometry.faces[0].normal, wv).normalize();
 
-      var angle = normal.dot(wv) / (normal.length() * wv.length());
-      var q = new THREE.Quaternion();
-      q.setFromAxisAngle(rotationAxis, Math.acos(angle));
-      separationPlane.rotation.setFromQuaternion(q);
-      separationPlane.visible = true;
+      if (learnedData.length > 1) {
+        if (learnedData.length == 2 || w[0] != oldW[0] || w[1] != oldW[1] || w[2] != oldW[2]) {
+          if (learnedData.length > 2) {
+            oldSeparationPlane.visible = false;
+            oldSeparationPlane.rotation.setFromQuaternion(separationPlane.quaternion);
+          }
+
+          var angle = normal.dot(wv) / (normal.length() * wv.length());
+          var q = new THREE.Quaternion();
+          q.setFromAxisAngle(rotationAxis, Math.acos(angle));
+          separationPlane.rotation.setFromQuaternion(q);
+          separationPlane.visible = true;
+        } else {
+          oldSeparationPlane.visible = false;
+        }
+      }
 
       weightVector = arrow(wv, '#ff00ff');
 
       scene.add(positivePoints, negativePoints, newPoint, weightVector);
+      oldW = w.concat();
       break;
     }
   }
